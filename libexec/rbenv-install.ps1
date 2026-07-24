@@ -498,13 +498,12 @@ So the snippet below is unneeded.
 #
 # See share/mirrors.ps1
 function download_shared_msys2 {
-    $all = get_all_remote_versions
+    $all = get_remote_versions_with_devkit
     $installed = get_all_installed_versions
 
-    # use latest stable build, rather than head, rather than what has been installed
+    # use latest stable build with devkit, rather than what has been installed
     $version = $null
     foreach ($i in $all) {
-        if ($i -eq 'head' ) { continue }
         if ($installed -contains $i) { continue }
         $version = $i
         break

@@ -150,6 +150,7 @@ if ($cmd -eq "init") {
 
 . $PSScriptRoot\..\lib\core.ps1
 . $PSScriptRoot\..\lib\commands.ps1
+. $PSScriptRoot\..\lib\catalog.ps1
 . $PSScriptRoot\..\lib\version.ps1
 
 

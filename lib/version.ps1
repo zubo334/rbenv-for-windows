@@ -66,10 +66,13 @@ function auto_fix_version_for_remote($ver) {
 }
 
 
-# Read versions list
+# Read installable versions
 function get_all_remote_versions {
-    $versions = Get-Content $PSScriptRoot\..\share\versions.txt
-    $versions = $versions -split "`n"
+    $catalog = get_version_catalog
+    $versions = @('head')
+    $versions += @($catalog.versions | ForEach-Object {
+        $_.version
+    })
     $versions
 }
 
