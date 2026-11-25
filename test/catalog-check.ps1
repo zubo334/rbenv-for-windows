@@ -9,6 +9,7 @@ $script:failed = $false
 
 . $PSScriptRoot\..\lib\core.ps1
 . $PSScriptRoot\..\lib\catalog.ps1
+. $PSScriptRoot\..\lib\version.ps1   # match_version_prefix, version_sort_key
 
 function assert_eq($actual, $expected, $label) {
     if ("$actual" -ne "$expected") {
@@ -24,8 +25,9 @@ $entries = @('3.1.2-1', '3.10.0-1', '4.0.9-1', '4.0.10-1', '3.4.4-2', '3.4.4-1')
         [PSCustomObject] @{
             version = $_
             tag = "RubyInstaller-$_"
-            x64_7z = $true
-            devkit_x64_exe = $true
+            sha256 = $null
+            devkit_sha256 = $null
+            has_devkit = $true
         }
     }
 
@@ -36,7 +38,7 @@ assert_eq $sorted[2].version '3.10.0-1' 'sort: 3.10.x above 3.4.x'
 assert_eq $sorted[3].version '3.4.4-2'  'sort: revision 2 above revision 1'
 
 $catalog = [PSCustomObject] @{
-    schema_version = 1
+    schema_version = 2
     fetched_at = [DateTimeOffset]::UtcNow.ToString('o')
     source = 'github-api'
     versions = $sorted
@@ -49,6 +51,7 @@ assert_eq (find_catalog_version $catalog '4')       '4.0.10-1' 'match: 4 picks n
 assert_eq (find_catalog_version $catalog '3.4.4')   '3.4.4-2'  'match: 3.4.4 picks newest revision'
 assert_eq (find_catalog_version $catalog '4.0.9-1') '4.0.9-1'  'match: exact full version'
 assert_eq (find_catalog_version $catalog '4.0.1')   ''         'match: 4.0.1 does not hit 4.0.10-1'
+assert_eq (find_catalog_version $catalog '3.1.')    '3.1.2-1'  'match: trailing dot stays a prefix'
 assert_eq (find_catalog_version $catalog '9.9')     ''         'match: unknown series'
 
 # --- resolution (catalog and network stubbed out) ---

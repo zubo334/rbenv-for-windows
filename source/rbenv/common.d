@@ -2,7 +2,7 @@
 * File          : common.d
 * Authors       : Aoran Zeng <ccmywish@qq.com>
 * Created on    : <2023-03-03>
-* Last modified : <2026-01-08>
+* Last modified : <2026-11-24>
 *
 * common:
 *
@@ -13,15 +13,15 @@
 module rbenv.common;
 
 import std.stdio;
+import std.json         : parseJSON;
 import std.process      : environment, executeShell;
-import std.array        : split, array;
-import std.algorithm    : canFind, startsWith;
+import std.array        : split, join, array;
+import std.algorithm    : canFind, startsWith, endsWith;
 import std.algorithm    : filter, sort, map, cmp;
 import std.file         : getcwd, chdir, dirEntries, SpanMode, exists, readText, read, write;
 import std.path         : baseName, dirName, rootName;
-import std.regex        : ctRegex, matchAll;
+import std.regex        : ctRegex, matchAll, matchFirst;
 import std.string       : indexOf, splitLines, chompPrefix;
-import std.array        : join;
 
 import core.stdc.stdlib : exit;
 
@@ -47,7 +47,7 @@ void success(string str) {
 //                  Global variable and constant
 // --------------------------------------------------------------
 
-private enum version_match_regexp = ctRegex!(r"\d{1,}\.\d{1,}\.\d{1,}-\d{1,}");
+private enum version_match_regexp = ctRegex!r"^(\d+)\.(\d+)\.(\d+)-(\d+)";
 
 string RBENV_ROOT;
 string SHIMS_DIR;
@@ -58,6 +58,23 @@ static this()
     RBENV_ROOT = environment["RBENV_ROOT"];
     SHIMS_DIR  = RBENV_ROOT ~ "\\shims";
     GLOBAL_VERSION_FILE = RBENV_ROOT ~ "\\global.txt";
+}
+
+string get_current_architecture() {
+    // Prefer the OS architecture when running a 32-bit process under WOW64.
+    string architecture;
+    if ("PROCESSOR_ARCHITEW6432" in environment && environment["PROCESSOR_ARCHITEW6432"].length > 0) {
+        architecture = environment["PROCESSOR_ARCHITEW6432"];
+    } else if ("PROCESSOR_ARCHITECTURE" in environment) {
+        architecture = environment["PROCESSOR_ARCHITECTURE"];
+    }
+
+    if (architecture == "ARM64" || architecture == "AARCH64") return "arm";
+    if (architecture == "AMD64" || architecture == "X64" || architecture == "X86_64") return "x64";
+
+    warn("rbenv: unsupported Windows architecture '" ~ architecture ~ "'");
+    exit(1);
+    return "";
 }
 
 
@@ -78,29 +95,56 @@ struct LocalVersionInfo{
 // Read versions list
 string[] get_all_remote_versions() {
 
-    auto vers_file = RBENV_ROOT ~ "\\rbenv\\share\\versions.txt";
+    auto architecture = get_current_architecture();
+    auto vers_file = RBENV_ROOT ~ "\\rbenv\\share\\versions-for-" ~ architecture ~ ".json";
 
-    auto vers_str = readText(vers_file);
+    auto vers_json = parseJSON(readText(vers_file));
+    string[] vers;
 
-    // split newline by default
-    auto vers = vers_str.split;
+    foreach (entry; vers_json.array) {
+        vers ~= entry["version"].str;
+    }
 
     return vers;
 }
 
 
+private int[4] parse_version_parts(string ver) {
+    import std.conv : to;
+    auto m = ver.matchFirst(version_match_regexp);
+    if (m.empty) return [0, 0, 0, 0];
+    return [m[1].to!int, m[2].to!int, m[3].to!int, m[4].to!int];
+}
+
+private bool version_gt(string a, string b) {
+    if (a == b) return false;
+    if (a == "head") return true;
+    if (b == "head") return false;
+    auto pa = parse_version_parts(a);
+    auto pb = parse_version_parts(b);
+    foreach (i; 0 .. 4) {
+        if (pa[i] != pb[i]) return pa[i] > pb[i];
+    }
+    return a > b;
+}
+
+private bool match_version_prefix(string candidate, string ver) {
+    if (ver.endsWith(".") || ver.endsWith("-")) {
+        return candidate.startsWith(ver);
+    }
+    return candidate == ver || candidate.startsWith(ver ~ ".") || candidate.startsWith(ver ~ "-");
+}
+
 // Read all dir names in the RBENV_ROOT
 string[] get_all_installed_versions() {
 
     // FilterResult!(__lambda1, _DirIterator!false)
-    auto vers = dirEntries(RBENV_ROOT, SpanMode.shallow).filter!(
-        (dir) {
-            auto name = dir.name;
-            return name.matchAll(version_match_regexp) || name == "head" ;
-        }
-    ).map!(a => baseName(a.name)).array;
+    auto vers = dirEntries(RBENV_ROOT, SpanMode.shallow)
+        .map!(dir => baseName(dir.name))
+        .filter!(name => name.matchAll(version_match_regexp) || name == "head")
+        .array;
 
-    vers = vers.sort!( (a,b) => cmp(a,b) == 1 ).array;
+    vers = vers.sort!((a, b) => version_gt(a, b)).array;
 
     string system_rb = environment.get("RBENV_SYSTEM_RUBY");
 
@@ -128,9 +172,7 @@ string auto_fix_version_for_installed(string ver) {
         return ver;
     } else {
         foreach (s ; versions)  {
-            // writeln(s);
-            auto yes = s.startsWith(ver);
-            if (yes) { return s; }
+            if (match_version_prefix(s, ver)) { return s; }
         }
     }
     warn("rbenv: version " ~ ver ~ " not installed");
@@ -150,8 +192,7 @@ string auto_fix_version_for_remote(string ver) {
         return ver;
     } else {
         foreach (s ; versions)  {
-            auto yes = s.startsWith(ver);
-            if (yes) { return s; }
+            if (match_version_prefix(s, ver)) { return s; }
         }
     }
 

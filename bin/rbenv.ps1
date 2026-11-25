@@ -6,7 +6,7 @@
 # Project Authors : Aoran Zeng <ccmywish@qq.com>
 # Contributors    : Scoop Contributors
 # Created On      : <2022-05-02>
-# Last Modified   : <2026-01-08>
+# Last Modified   : <2026-11-25>
 #
 # Credit:
 #   I reuse a lot of code pieces from Scoop:
@@ -21,7 +21,7 @@ param($cmd)
 # [String]
 # rbenv's own version
 # Not to conflict with $env:RBENV_VERSION ('rbenv shell' sets it)
-$RBENV_OWN_VERSION       = "rbenv v1.5.2"
+$RBENV_OWN_VERSION       = "v1.7.0"
 
 # [String]
 # Where we check the global version
@@ -161,7 +161,7 @@ $available_commands = get_commands
 
 if ( @('-v', '--version') -contains $cmd -or $args[0] -contains '-v') {
     # Defined at the top of this file
-    $RBENV_OWN_VERSION
+    "rbenv for Windows $RBENV_OWN_VERSION"
 }
 
 elseif ( @($null, '--help', '/?') -contains $cmd -or $args[0] -contains '-h') {

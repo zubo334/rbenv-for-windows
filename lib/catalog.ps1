@@ -1,22 +1,28 @@
 # RubyInstaller release catalog
 
 $RBENV_CATALOG_API = "https://api.github.com/repos/oneclick/rubyinstaller2/releases"
-$RBENV_CATALOG_CACHE_SCHEMA = 1
+$RBENV_CATALOG_CACHE_SCHEMA = 2
 $RBENV_CATALOG_CACHE_TTL_HOURS = 24
 $RBENV_CATALOG_PER_PAGE = 100
 
 
 function get_catalog_cache_path {
-    return "$env:RBENV_ROOT\cache\remote-versions.json"
+    return "$env:RBENV_ROOT\cache\remote-versions-$(get_current_architecture).json"
 }
 
 
 function sort_catalog_entries($entries) {
-    @($entries) | Sort-Object -Property `
-        @{ Expression = { [int](($_.version -split '[.-]')[0]) }; Descending = $true }, `
-        @{ Expression = { [int](($_.version -split '[.-]')[1]) }; Descending = $true }, `
-        @{ Expression = { [int](($_.version -split '[.-]')[2]) }; Descending = $true }, `
-        @{ Expression = { [int](($_.version -split '[.-]')[3]) }; Descending = $true }
+    @($entries) | Sort-Object -Descending { version_sort_key $_.version }
+}
+
+
+# Extract the sha256 hex from a GitHub asset 'digest' field, or $null
+# (assets uploaded before mid-2025 have no digest)
+function asset_digest_sha256($asset) {
+    if ([string] $asset.digest -match '^sha256:([0-9a-fA-F]{64})$') {
+        return $Matches[1]
+    }
+    return $null
 }
 
 
@@ -28,6 +34,7 @@ function parse_releases_json($json_text) {
         return $null
     }
 
+    $architecture = get_current_architecture
     $entries = @()
 
     foreach ($release in $releases) {
@@ -41,19 +48,29 @@ function parse_releases_json($json_text) {
         }
 
         $version = $Matches[1]
-        $archive_name = "rubyinstaller-$version-x64.7z"
-        $devkit_name = "rubyinstaller-devkit-$version-x64.exe"
-        $asset_names = @($release.assets | ForEach-Object { [string] $_.name })
+        $archive_name = "rubyinstaller-$version-$architecture.7z"
+        $devkit_name = "rubyinstaller-devkit-$version-$architecture.exe"
 
-        if ($asset_names -notcontains $archive_name) {
+        $archive_asset = $null
+        $devkit_asset = $null
+        foreach ($asset in @($release.assets)) {
+            if ($asset.name -eq $archive_name) { $archive_asset = $asset }
+            if ($asset.name -eq $devkit_name)  { $devkit_asset = $asset }
+        }
+
+        if ($null -eq $archive_asset) {
             continue
         }
+
+        $devkit_sha256 = $null
+        if ($devkit_asset) { $devkit_sha256 = asset_digest_sha256 $devkit_asset }
 
         $entries += [PSCustomObject] @{
             version = $version
             tag = $tag
-            x64_7z = $true
-            devkit_x64_exe = ($asset_names -contains $devkit_name)
+            sha256 = asset_digest_sha256 $archive_asset
+            devkit_sha256 = $devkit_sha256
+            has_devkit = ($null -ne $devkit_asset)
         }
     }
 
@@ -153,8 +170,9 @@ function read_catalog_cache {
         $entries += [PSCustomObject] @{
             version = $version
             tag = $tag
-            x64_7z = [bool] $entry.x64_7z
-            devkit_x64_exe = [bool] $entry.devkit_x64_exe
+            sha256 = $entry.sha256
+            devkit_sha256 = $entry.devkit_sha256
+            has_devkit = [bool] $entry.has_devkit
         }
     }
 
@@ -212,13 +230,13 @@ function write_catalog_cache($catalog) {
 
 
 function load_bundled_catalog {
+    $architecture = get_current_architecture
+    $versions_path = "$PSScriptRoot\..\share\versions-for-$architecture.json"
     $entries = @()
-    $versions_path = "$PSScriptRoot\..\share\versions.txt"
 
-    foreach ($version in @(Get-Content $versions_path)) {
-        if ($version -eq 'head') {
-            continue
-        }
+    foreach ($item in @(Get-Content -LiteralPath $versions_path -Raw | ConvertFrom-Json)) {
+        $version = [string] $item.version
+        # Also skips the 'head' entry
         if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$') {
             continue
         }
@@ -226,8 +244,9 @@ function load_bundled_catalog {
         $entries += [PSCustomObject] @{
             version = $version
             tag = "RubyInstaller-$version"
-            x64_7z = $true
-            devkit_x64_exe = $true
+            sha256 = $item.sha256
+            devkit_sha256 = $item.devkit_sha256
+            has_devkit = -not [string]::IsNullOrWhiteSpace($item.devkit_sha256)
         }
     }
 
@@ -263,22 +282,43 @@ function get_version_catalog {
 function get_remote_versions_with_devkit {
     $catalog = get_version_catalog
     @($catalog.versions | Where-Object {
-        $_.devkit_x64_exe
+        $_.has_devkit
     } | ForEach-Object {
         $_.version
     })
 }
 
 
-# Segment-aware match: '3.1' matches 3.1.x-y but not 3.10.x-y.
+# Segment-aware match (see match_version_prefix in lib/version.ps1).
 # The catalog is sorted descending, so the first match is the newest.
 function find_catalog_version($catalog, $ver) {
     foreach ($entry in @($catalog.versions)) {
         $full = [string] $entry.version
-        if ($full -eq $ver -or
-            $full.StartsWith("$ver.") -or
-            $full.StartsWith("$ver-")) {
+        if (match_version_prefix $full ([string] $ver)) {
             return $full
+        }
+    }
+    return $null
+}
+
+
+# $kind: '7z' or 'devkit'
+# Falls back to the bundled list, which carries hashes for releases
+# older than GitHub's asset digests
+function catalog_sha256_for_version($version, $kind) {
+    $catalogs = @((get_version_catalog))
+    if ($catalogs[0].source -ne 'bundled') {
+        $catalogs += load_bundled_catalog
+    }
+
+    foreach ($catalog in $catalogs) {
+        foreach ($entry in @($catalog.versions)) {
+            if ($entry.version -ne $version) { continue }
+
+            if ($kind -eq 'devkit') { $sha = [string] $entry.devkit_sha256 }
+            else                    { $sha = [string] $entry.sha256 }
+
+            if ($sha -match '^[0-9a-fA-F]{64}$') { return $sha }
         }
     }
     return $null
@@ -298,8 +338,10 @@ function catalog_tag_for_version($version) {
 
 # $kind: '7z' or 'devkit'
 function build_download_url($version, $kind) {
+    $architecture = get_current_architecture
+
     if ($version -eq 'head') {
-        return "https://github.com/oneclick/rubyinstaller2/releases/download/rubyinstaller-head/rubyinstaller-head-x64.7z"
+        return "https://github.com/oneclick/rubyinstaller2/releases/download/rubyinstaller-head/rubyinstaller-head-$architecture.7z"
     }
 
     . $PSScriptRoot\..\share\mirrors.ps1
@@ -320,9 +362,9 @@ function build_download_url($version, $kind) {
     $site_url = $site_url -replace '<version>', $version
 
     if ($kind -eq 'devkit') {
-        return "$site_url/rubyinstaller-devkit-$version-x64.exe"
+        return "$site_url/rubyinstaller-devkit-$version-$architecture.exe"
     }
-    return "$site_url/rubyinstaller-$version-x64.7z"
+    return "$site_url/rubyinstaller-$version-$architecture.7z"
 }
 
 
@@ -342,7 +384,8 @@ function resolve_remote_version($ver) {
     if ($ver -eq 'head') { return 'head' }
 
     $ver = [string] $ver
-    if ($ver -notmatch '^[0-9]+(\.[0-9]+){0,2}(-[0-9]+)?$') {
+    # A trailing '.' or '-' keeps upstream's explicit-prefix form, e.g. '3.1.'
+    if ($ver -notmatch '^[0-9]+(\.[0-9]+){0,2}([.-]|-[0-9]+)?$') {
         warn "rbenv: invalid version '$ver'"
         exit 1
     }

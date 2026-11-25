@@ -280,6 +280,25 @@ function remove_ruby_registry_info($version) {
 
 
 
+# $kind: '7z' or 'devkit'
+# The expected hash comes from the version catalog (GitHub asset digest,
+# falling back to the bundled versions-for-<arch>.json)
+function verify_download_sha256($path, $version, $kind) {
+    $expected = catalog_sha256_for_version $version $kind
+    if (!$expected) {
+        warn "rbenv: no published SHA256 for Ruby '$version'; skipping checksum verification"
+        return
+    }
+
+    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    if ($actual -ine $expected) {
+        abort "rbenv: SHA256 mismatch for '$path' (expected $expected, got $actual)"
+    }
+
+    info "SHA256 verified"
+}
+
+
 # The user will download in three ways
 #   1. Download directly from official RubyInstaller2 Github release
 #
@@ -322,12 +341,15 @@ function download_ruby($version) {
         warn "rbenv: The 'head' version can only be downloaded from Github"
     }
 
-    $cache_name = "rubyinstaller-$version-x64.7z"
+    $architecture = get_current_architecture
+    $cache_name = "rubyinstaller-$version-$architecture.7z"
     $url = build_download_url $version '7z'
 
     Write-Host "Begin downloading ..."
     info "=> $url"
-    return download_with_cache $url $cache_name
+    $path = download_with_cache $url $cache_name
+    verify_download_sha256 $path $version '7z'
+    return $path
 }
 
 
@@ -383,12 +405,15 @@ function download_ruby_with_msys2($version) {
         info "Using mirror for downloading RubyInstaller-devkit(MSYS2): "
     }
 
-    $cache_name = "rubyinstaller-devkit-$version-x64.exe"
+    $architecture = get_current_architecture
+    $cache_name = "rubyinstaller-devkit-$version-$architecture.exe"
     $url = build_download_url $version 'devkit'
 
     Write-Host "Begin downloading ..."
     info "=> $url"
-    return download_with_cache $url $cache_name
+    $path = download_with_cache $url $cache_name
+    verify_download_sha256 $path $version 'devkit'
+    return $path
 }
 
 
@@ -399,7 +424,7 @@ function download_ruby_with_msys2($version) {
 function install_ruby_with_msys2($version) {
     $path = download_ruby_with_msys2 $version
 
-    # e.g. rubyinstaller-devkit-3.1.2-1-x64
+    # e.g. rubyinstaller-devkit-3.1.2-1-<arch>.exe
     $target = fname $path
     Write-Host "Installing $target ..."
 
@@ -446,7 +471,7 @@ So the snippet below is unneeded.
 }
 
 
-# Download the latest x64 MSYS2 built into official RubyInstaller-devkit
+# Download the latest architecture-matched MSYS2 built into official RubyInstaller-devkit
 #
 # The 64-bit version MSYS2 is able to build both 32-bit and 64-bit packages
 #
@@ -498,7 +523,7 @@ function install_shared_msys2 {
 
     $path = download_shared_msys2
 
-    # e.g. rubyinstaller-devkit-3.1.2-1-x64
+    # e.g. rubyinstaller-devkit-3.1.2-1-<arch>.exe
     $target = fname $path
     Write-Host "Installing $target(MSYS2) ..."
 

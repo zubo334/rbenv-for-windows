@@ -24,6 +24,8 @@ Hi, hello
 1. Handle `rbenv local` well
 2. Integrate with `RubyGems`, `Bundler` compactly
 3. Interact with shell prompt tools like [starship] and [oh-my-posh] properly
+4. Support RubyInstaller for ARM64
+5. Extend rational commands familiar to [mise] and [RVM] users. [Compare them](./doc/Comparing-RVM-mise-rbenv.md).
 
 There's a simple [record](./doc/benchmark.md) to show if `rbenv` will influence Ruby/Gem commands startup time significantly.
 
@@ -164,6 +166,24 @@ rbenv install -l
 # List all Ruby versions
 rbenv install -a
 
+# List installed Ruby versions in a table
+rbenv list
+# or
+rbenv ls
+# These also list installed versions
+rbenv ls -i
+rbenv ls --installed
+rbenv ls -l
+rbenv ls -local
+rbenv ls --local
+# List available Ruby versions; a check mark indicates an installed version
+rbenv list -r
+# or
+rbenv ls --remote
+
+# Remote versions come from the bundled list for your Windows architecture.
+# Update rbenv to refresh it.
+
 # Hooray! So easy to try Ruby dev branch!
 rbenv install head
 
@@ -193,6 +213,12 @@ rbenv global
 # Set local version
 rbenv local 3.1.2-1
 
+# Use global scope when this directory or a parent contains .git; otherwise use local
+rbenv use 3.1.2-1
+# Override the automatic choice
+rbenv use --local 3.1.2-1
+rbenv use --global 3.1.2-1
+
 # Check versions
 rbenv versions
 
@@ -201,6 +227,15 @@ rbenv shell 3.0.0-1
 
 # Show current version
 rbenv version
+
+# Show the active version and configured global, local, shell and system versions.
+# The local version is shown as written in the nearest .ruby-version file.
+rbenv current
+# or
+rbenv cur
+
+# Show rbenv, binary, PowerShell and Ruby environment information
+rbenv info
 
 # Unset Ruby version in this shell
 rbenv shell --unset
@@ -223,9 +258,9 @@ However, before `3.1.0-1`, we have to download `rubyinstaller-devkit-<version>.7
 
 **The current implementation has these drawbacks and issues:**
 
-1. We only support CRuby, x64 versions, provided by RubyInstaller2
+1. We only support CRuby, x64 and arm versions, provided by RubyInstaller2
 
-    Sorry for that I have no plan to add x86 versions and other Ruby implementations like mruby, JRuby, TruffleRuby and so on. If you want to support it, consider to be a maintainer please! Thank you!
+    Sorry for that I have no plan to add x86 versions and other Ruby implementations like mruby, JRuby, TruffleRuby and so on. If you want to support it, consider to be a maintainer!
 
 2. We don't support old versions that have a little different leading URL
 
@@ -269,5 +304,7 @@ name | example | description
 
 [RubyInstaller2]: https://github.com/oneclick/rubyinstaller2
 [rbenv]: https://github.com/rbenv/rbenv
+[RVM]: https://github.com/rvm/rvm
+[mise]: https://github.com/jdx/mise
 [starship]: https://github.com/starship/starship
 [oh-my-posh]: https://github.com/JanDeDobbeleer/oh-my-posh

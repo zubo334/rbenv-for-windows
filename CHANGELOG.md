@@ -1,6 +1,36 @@
 # Changelog
 
-## [Unreleased](#) (2026-01-08)
+## [Unreleased](#) (2026-11-25)
+
+<br>
+
+## [v1.7.0](#) (2026-11-25)
+
+### New features:
+
+- Add `rbenv ls`
+- Add `rbenv use`
+- Add `rbenv info`
+- Add `rbenv current`
+
+### Enhancements:
+
+- Wrap `ridk.ps1` exit code
+
+<br>
+
+## [v1.6.0](#) (2026-11-24)
+
+### New features:
+
+- Support ARM
+- Check SHA256 after downloading
+
+### Bug fixes:
+
+- Correctly sort versions according to each version part
+
+    See GitHub PR [#48](https://github.com/RubyMetric/rbenv-for-windows/pull/48)
 
 <br>
 
