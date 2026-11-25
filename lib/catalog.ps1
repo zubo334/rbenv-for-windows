@@ -84,6 +84,8 @@ function fetch_github_releases_page($page) {
 
 
 function fetch_remote_catalog {
+    $script:RBENV_CATALOG_FETCH_ATTEMPTED = $true
+
     $entries = @()
     $page = 1
 
@@ -265,4 +267,120 @@ function get_remote_versions_with_devkit {
     } | ForEach-Object {
         $_.version
     })
+}
+
+
+# Segment-aware match: '3.1' matches 3.1.x-y but not 3.10.x-y.
+# The catalog is sorted descending, so the first match is the newest.
+function find_catalog_version($catalog, $ver) {
+    foreach ($entry in @($catalog.versions)) {
+        $full = [string] $entry.version
+        if ($full -eq $ver -or
+            $full.StartsWith("$ver.") -or
+            $full.StartsWith("$ver-")) {
+            return $full
+        }
+    }
+    return $null
+}
+
+
+function catalog_tag_for_version($version) {
+    $catalog = get_version_catalog
+    foreach ($entry in @($catalog.versions)) {
+        if ($entry.version -eq $version) {
+            return [string] $entry.tag
+        }
+    }
+    return $null
+}
+
+
+# $kind: '7z' or 'devkit'
+function build_download_url($version, $kind) {
+    if ($version -eq 'head') {
+        return "https://github.com/oneclick/rubyinstaller2/releases/download/rubyinstaller-head/rubyinstaller-head-x64.7z"
+    }
+
+    . $PSScriptRoot\..\share\mirrors.ps1
+
+    $mir = $env:RBENV_USE_MIRROR
+    if ($mir) {
+        if ($mir -match '^https?://') { $site_url = $mir.TrimEnd('/') }
+        else { $site_url = $RBENV_MIRRORS["$mir"] }
+    } else {
+        $site_url = $RBENV_MIRRORS['Default']
+    }
+
+    # Old releases use lowercase tags; URLs are case-sensitive
+    $tag = catalog_tag_for_version $version
+    if ($tag) {
+        $site_url = $site_url -replace 'RubyInstaller-<version>', $tag
+    }
+    $site_url = $site_url -replace '<version>', $version
+
+    if ($kind -eq 'devkit') {
+        return "$site_url/rubyinstaller-devkit-$version-x64.exe"
+    }
+    return "$site_url/rubyinstaller-$version-x64.7z"
+}
+
+
+# Returns 'exists' | 'missing' | 'unreachable'
+function probe_remote_asset($version, $kind) {
+    $url = build_download_url $version $kind
+    $null = & curl.exe -fsIL --connect-timeout 5 --max-time 10 $url
+    if ($LASTEXITCODE -eq 0)  { return 'exists' }
+    if ($LASTEXITCODE -eq 22) { return 'missing' }   # curl: HTTP error (404 etc.)
+    return 'unreachable'
+}
+
+
+# Resolve a user-given version against the catalog.
+# A full version missing from the catalog is accepted if its remote asset exists.
+function resolve_remote_version($ver) {
+    if ($ver -eq 'head') { return 'head' }
+
+    $ver = [string] $ver
+    if ($ver -notmatch '^[0-9]+(\.[0-9]+){0,2}(-[0-9]+)?$') {
+        warn "rbenv: invalid version '$ver'"
+        exit 1
+    }
+
+    $catalog = get_version_catalog
+    $match = find_catalog_version $catalog $ver
+    if ($match) { return $match }
+
+    # Cache may lag behind a new release; refresh once
+    if (-not $RBENV_CATALOG_FETCH_ATTEMPTED) {
+        $remote = fetch_remote_catalog
+        if ($remote) {
+            write_catalog_cache $remote | Out-Null
+            $match = find_catalog_version $remote $ver
+            if ($match) { return $match }
+        }
+    }
+
+    if ($ver -match '^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$') {
+        switch (probe_remote_asset $ver '7z') {
+            'exists' {
+                warn "rbenv: version $ver is not in the catalog, but its asset exists. Installing anyway"
+                return $ver
+            }
+            'missing' {
+                if ($env:RBENV_USE_MIRROR) {
+                    warn "rbenv: version $ver not found on the mirror (not synced yet?). Retry later or unset RBENV_USE_MIRROR"
+                } else {
+                    warn "rbenv: version $ver not found"
+                }
+            }
+            'unreachable' {
+                warn "rbenv: version $ver is not in the local catalog, and the remote is unreachable (offline?)"
+            }
+        }
+        exit 1
+    }
+
+    warn "rbenv: version $ver not found"
+    exit 1
 }

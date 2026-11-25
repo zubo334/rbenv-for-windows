@@ -315,28 +315,15 @@ function remove_ruby_registry_info($version) {
 #   2. Install only  rubyinstaller.7z when 'version >= 3.1.0-1'
 #
 function download_ruby($version) {
-    # Get our mirror list
-    . $PSScriptRoot\..\share\mirrors.ps1
-
-    $mir = $env:RBENV_USE_MIRROR
-    if ($mir) {
-        if ($mir -contains "http" ) { $site_url = $mir.TrimEnd('/') }
-        else { $site_url = $RBENV_MIRRORS["$mir"] }
+    if ($env:RBENV_USE_MIRROR) {
         info "Using mirror for downloading RubyInstaller.7z "
-
-    } else {
-        $site_url = $RBENV_MIRRORS['Default']
     }
-
-    $url = $site_url -replace '<version>', $version
-
-    $cache_name = "rubyinstaller-$version-x64.7z"
-    $url += "/$cache_name"
-
     if ($version -eq 'head') {
         warn "rbenv: The 'head' version can only be downloaded from Github"
-        $url = "https://github.com/oneclick/rubyinstaller2/releases/download/rubyinstaller-head/rubyinstaller-head-x64.7z"
     }
+
+    $cache_name = "rubyinstaller-$version-x64.7z"
+    $url = build_download_url $version '7z'
 
     Write-Host "Begin downloading ..."
     info "=> $url"
@@ -392,22 +379,12 @@ function install_ruby($version) {
 
 # Only called by install_ruby_with_msys2
 function download_ruby_with_msys2($version) {
-    # Get our mirror list
-    . $PSScriptRoot\..\share\mirrors.ps1
-
-    $mir = $env:RBENV_USE_MIRROR
-    if ($mir) {
-        if ($mir -contains "http" ) { $site_url = $mir.TrimEnd('/') }
-        else { $site_url = $RBENV_MIRRORS["$mir"] }
+    if ($env:RBENV_USE_MIRROR) {
         info "Using mirror for downloading RubyInstaller-devkit(MSYS2): "
-    } else {
-        $site_url = $RBENV_MIRRORS['Default']
     }
 
-    $url = $site_url -replace '<version>', $version
-
     $cache_name = "rubyinstaller-devkit-$version-x64.exe"
-    $url += "/$cache_name"
+    $url = build_download_url $version 'devkit'
 
     Write-Host "Begin downloading ..."
     info "=> $url"

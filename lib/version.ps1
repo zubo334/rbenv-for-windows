@@ -43,26 +43,11 @@ function auto_fix_version_for_installed($ver) {
 
 
 # Auto fix version number to get close to all remote versions
-# i.e. versions list
 #
 # commands using this:
 # 1. rbenv-install
 function auto_fix_version_for_remote($ver) {
-    $versions = get_all_remote_versions
-
-    if ($versions -contains $ver) {
-        return $ver
-    } else {
-        foreach ($i in $versions)  {
-            $i = [string] $i
-            $ver = [string] $ver
-            $idx = $i.IndexOf($ver)
-            if ($idx -eq 0) { return $i }
-        }
-    }
-
-    warn "rbenv: version $ver not found"
-    exit
+    resolve_remote_version $ver
 }
 
 
