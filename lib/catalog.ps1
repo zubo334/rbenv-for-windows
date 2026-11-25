@@ -384,3 +384,27 @@ function resolve_remote_version($ver) {
     warn "rbenv: version $ver not found"
     exit 1
 }
+
+# Force-refresh the catalog cache, ignoring the TTL
+function update_version_catalog {
+    Write-Host "Updating the RubyInstaller version catalog ..."
+
+    $remote = fetch_remote_catalog
+    if ($null -eq $remote) {
+        warn "rbenv: Failed to fetch the version catalog from GitHub, keeping the current one"
+        return
+    }
+
+    write_catalog_cache $remote | Out-Null
+    success "rbenv: Version catalog updated ($(@($remote.versions).Count) versions)"
+}
+
+
+# Used by 'rbenv install -l/-a' after printing the list
+function warn_if_catalog_stale {
+    $catalog = get_version_catalog
+    if ($catalog.source -eq 'github-api' -and (catalog_cache_fresh $catalog)) {
+        return
+    }
+    warn "rbenv: this list may be stale (source: $($catalog.source)). Run 'rbenv update versions'"
+}

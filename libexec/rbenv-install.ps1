@@ -575,10 +575,12 @@ When users firstly installed `rbenv`, they will go here,
 if ($args[0] -eq '-l' -or $args[0] -eq '--list') {
     $versions = get_all_remote_versions
     $versions[0..10]
+    warn_if_catalog_stale
 }
 
 elseif ($args[0] -eq '-a' -or $args[0] -eq '--all') {
     get_all_remote_versions
+    warn_if_catalog_stale
 }
 
 elseif (!$cmd) {

@@ -3,6 +3,7 @@
 # Help: rbenv update          => Update rbenv itself
 # rbenv update cn       => Update rbenv itself for Chinese users
 # rbenv update rbenv    => Update rbenv itself
+# rbenv update versions => Refresh the RubyInstaller version catalog
 # rbenv update msys     => Update msys2
 # rbenv update msys2    => Same with 'update msys'
 # rbenv update devkit   => Same with 'update msys'
@@ -18,6 +19,8 @@ function update_rbenv($config) {
     } else {
         & "$env:RBENV_ROOT\rbenv\tool\install.ps1" update
     }
+
+    update_version_catalog
 }
 
 
@@ -33,6 +36,8 @@ if (! $cmd) {
     update_rbenv
 } elseif ($cmd -eq 'cn') {
     update_rbenv 'cn'
+} elseif ($cmd -eq 'versions') {
+    update_version_catalog
 } elseif ($cmd -eq 'msys' -or $cmd -eq 'msys2' -or $cmd -eq 'devkit' ) {
     update_msys2
 } else {
